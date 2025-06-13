@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  biliUserId   String    @unique
+  biliUsername String
+  cookies      String
+  lastLoginAt  DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  avatarUrl    String?
+  messages     Message[]
+  rules        Rule[]
+}
+
+model Rule {
+  id               String   @id @default(uuid())
+  name             String
+  keywords         String
+  responseTemplate String
+  isActive         Boolean  @default(true)
+  priority         Int      @default(0)
+  type             String   @default("general") // 添加规则类型字段，默认为general
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id           String    @id @default(uuid())
+  messageId    String    @unique
+  senderId     String
+  receiverId   String?
+  content      String
+  sentAt       DateTime  @default(now())
+  isRead       Boolean   @default(false)
+  isProcessed  Boolean   @default(false)
+  isAutoReply  Boolean   @default(false)
+  ruleId       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
