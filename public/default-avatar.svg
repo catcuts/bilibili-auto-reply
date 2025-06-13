@@ -1,5 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <circle cx="64" cy="64" r="64" fill="#e0e0e0"/>
-  <circle cx="64" cy="50" r="24" fill="#bdbdbd"/>
-  <path d="M64 84c-24 0-36 12-36 36h72c0-24-12-36-36-36z" fill="#bdbdbd"/>
+  <!-- 背景圆形 -->
+  <circle cx="64" cy="64" r="64" fill="#fb7299"/>
+  
+  <!-- 消息气泡 -->
+  <path d="M32 48c0-4.4 3.6-8 8-8h48c4.4 0 8 3.6 8 8v24c0 4.4-3.6 8-8 8H68l-12 12v-12H40c-4.4 0-8-3.6-8-8V48z" fill="white"/>
+  
+  <!-- 自动回复图标 -->
+  <path d="M96 80c0-4.4 3.6-8 8-8h48c4.4 0 8 3.6 8 8v24c0 4.4-3.6 8-8 8H132l-12 12v-12h-16c-4.4 0-8-3.6-8-8V80z" fill="#23ade5" transform="scale(0.5) translate(64, 64)"/>
+  
+  <!-- B站标志 -->
+  <path d="M50 56h8v16h-8zM70 56h8v16h-8z" fill="#fb7299"/>
+  <path d="M44 52c0-2.2 1.8-4 4-4h32c2.2 0 4 1.8 4 4v16c0 2.2-1.8 4-4 4H48c-2.2 0-4-1.8-4-4V52z" fill="none" stroke="#fb7299" stroke-width="3"/>
 </svg>
