@@ -4,6 +4,76 @@
 
 B站私信自动回复系统是一个基于Next.js和React开发的Web应用，旨在帮助B站用户自动回复私信消息，提高社交效率。系统通过与B站API交互，获取用户的私信消息，并根据预设的规则自动生成回复内容。
 
+## 快速开始
+
+### 环境要求
+
+- Node.js 16.x 或更高版本
+- npm 8.x 或更高版本
+- 现代浏览器（Chrome、Firefox、Edge等）
+
+### 安装步骤
+
+1. 克隆项目代码
+
+```bash
+git clone https://github.com/yourusername/bilibili-auto-reply.git
+cd bilibili-auto-reply
+```
+
+2. 安装依赖
+
+```bash
+npm install
+```
+
+3. 初始化数据库
+
+```bash
+npx prisma migrate dev --name init
+```
+
+4. 启动开发服务器
+
+```bash
+npm run dev
+```
+
+5. 访问应用
+
+打开浏览器，访问 http://localhost:3000
+
+### 使用指南
+
+1. **登录B站账号**
+   - 在首页点击"登录"按钮
+   - 使用手机扫描二维码完成登录
+
+2. **创建回复规则**
+   - 点击"规则管理"进入规则页面
+   - 点击"创建规则"按钮
+   - 填写规则名称、关键词、回复模板等信息
+   - 点击"保存"按钮
+
+3. **启用自动回复**
+   - 在首页勾选"启用自动检查"
+   - 设置检查间隔时间（默认为60秒）
+   - 系统将按设定的时间间隔自动检查新私信并回复
+
+4. **查看消息记录**
+   - 点击"消息管理"进入消息页面
+   - 查看所有私信会话和消息内容
+   - 可手动发送私信
+
+### 配置说明
+
+系统使用 `.env` 文件存储配置信息，您可以创建 `.env.local` 文件进行本地配置：
+
+```
+DATABASE_URL="file:./dev.db"
+NEXT_PUBLIC_API_BASE_URL="http://localhost:3000/api"
+```
+
 ## 系统架构
 
 ### 技术栈
