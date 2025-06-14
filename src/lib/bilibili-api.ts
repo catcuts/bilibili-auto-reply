@@ -43,32 +43,53 @@ export const shouldUseProxy = async () => {
 };
 
 // 通过代理发送请求
-// 通过代理发送请求
 export const sendRequestViaProxy = async (requestConfig) => {
   try {
-    // 添加详细日志，记录请求配置
-    console.log('代理请求配置:', JSON.stringify({
+    // 添加详细日志，记录完整请求配置
+    console.log('代理请求完整配置:', JSON.stringify({
       url: requestConfig.url,
       method: requestConfig.method,
-      params: requestConfig.params
+      params: requestConfig.params,
+      headers: requestConfig.headers ? Object.keys(requestConfig.headers) : [],
+      data: requestConfig.data,
+      fullRequestConfig: requestConfig
     }, null, 2));
     
     const proxyClient = await createProxyClient();
     
+    console.log('发送代理请求到:', await proxyClient.getUri());
+    
     const response = await proxyClient.post('', {
       ...requestConfig
+    });
+    
+    console.log('代理请求响应状态:', response.status);
+    console.log('代理请求响应头:', JSON.stringify(response.headers, null, 2));
+    console.log('代理请求响应数据结构:', {
+      success: response.data?.success,
+      hasData: !!response.data?.data,
+      hasNestedData: !!response.data?.data?.data,
+      message: response.data?.message
     });
     
     if (response.data.success) {
       return response.data.data.data;
     } else {
       console.error('代理请求返回错误:', response.data.message);
+      console.error('完整错误响应:', JSON.stringify(response.data, null, 2));
       throw new Error(response.data.message || '代理请求失败');
     }
   } catch (error) {
     console.error('代理请求失败:', error);
     console.error('错误详情:', error.message);
+    console.error('错误堆栈:', error.stack);
     console.error('请求配置:', JSON.stringify(requestConfig, null, 2));
+    
+    if (error.response) {
+      console.error('错误响应状态:', error.response.status);
+      console.error('错误响应数据:', JSON.stringify(error.response.data, null, 2));
+    }
+    
     throw error;
   }
 };
@@ -152,6 +173,40 @@ export const loginApi = {
     } catch (error) {
       console.error('检查二维码状态失败:', error);
       return handleApiError(error, '检查二维码状态失败');
+    }
+  },
+  
+  // 检查登录状态（与checkQrCodeStatus相同，用于兼容性）
+  checkLoginStatus: async (qrcode_key) => {
+    try {
+      if (!qrcode_key) {
+        return {
+          code: -1,
+          message: '缺少二维码密钥',
+          data: null
+        };
+      }
+      
+      // 检查是否应该使用代理
+      const useProxy = await shouldUseProxy();
+      
+      if (useProxy) {
+        console.log('通过代理检查登录状态');
+        return await sendRequestViaProxy({
+          url: 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll',
+          method: 'GET',
+          params: { qrcode_key }
+        });
+      } else {
+        const response = await biliApi.get(
+          'https://passport.bilibili.com/x/passport-login/web/qrcode/poll',
+          { params: { qrcode_key } }
+        );
+        return response.data;
+      }
+    } catch (error) {
+      console.error('检查登录状态失败:', error);
+      return handleApiError(error, '检查登录状态失败');
     }
   },
   
@@ -264,11 +319,12 @@ export const messageApi = {
   },
   
   // 获取与特定用户的私信内容
-  getSessionMessages: async (cookies, talkerId) => {
+  getSessionMessages: async (cookies, talkerId, options = {}) => {
     try {
       console.log('获取私信内容请求开始:', {
         talkerId,
-        cookiesLength: cookies?.length
+        cookiesLength: cookies?.length,
+        options
       });
       
       // 检查talkerId是否有效
@@ -281,9 +337,24 @@ export const messageApi = {
         };
       }
       
-      console.log('发送API请求获取私信内容，参数:', {
+      // 设置获取消息的数量，确保能获取到足够的消息
+      const size = options.size || 20; // 根据B站API文档，添加size参数指定获取的消息数量
+      
+      // 构建API请求参数
+      const apiParams = {
         talker_id: talkerId,
         session_type: 1,
+        size: size,
+        // 添加可选的序列号参数，用于分页获取消息
+        ...(options.begin_seqno && { begin_seqno: options.begin_seqno }),
+        ...(options.end_seqno && { end_seqno: options.end_seqno }),
+        sender_device_id: 1,  // 根据API文档添加设备ID参数
+        build: 0,
+        mobi_app: 'web'
+      };
+      
+      console.log('发送API请求获取私信内容，参数:', {
+        ...apiParams,
         hasCookies: !!cookies,
         cookiesLength: cookies?.length
       });
@@ -303,10 +374,7 @@ export const messageApi = {
         return await sendRequestViaProxy({
           url: 'https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs',
           method: 'GET',
-          params: {
-            talker_id: talkerId,
-            session_type: 1
-          },
+          params: apiParams,
           headers: {
             Cookie: cookies
           }
@@ -315,10 +383,7 @@ export const messageApi = {
         const response = await biliApi.get(
           'https://api.vc.bilibili.com/svr_sync/v1/svr_sync/fetch_session_msgs',
           {
-            params: {
-              talker_id: talkerId,
-              session_type: 1
-            },
+            params: apiParams,
             headers: {
               Cookie: cookies
             }
@@ -348,7 +413,7 @@ export const messageApi = {
   },
   
   // 发送私信
-  sendMessage: async (cookies, receiverId, content) => {
+  sendMessage: async (cookies, senderUid, receiverId, content, csrfToken) => {
     try {
       if (!cookies || !receiverId || !content) {
         return {
@@ -358,40 +423,93 @@ export const messageApi = {
         };
       }
       
+      // 使用传入的senderUid，如果没有则尝试获取
+      console.log('使用发送者ID:', senderUid);
+      let sender_uid = senderUid ? senderUid.toString() : '0'; // 使用传入的senderUid
+      
+      // 如果没有提供senderUid，则尝试从用户信息中获取
+      if (!sender_uid || sender_uid === '0') {
+        console.log('未提供发送者ID，尝试从用户信息获取');
+        try {
+          const userInfoResult = await loginApi.getUserInfo(cookies);
+          if (userInfoResult.code === 0 && userInfoResult.data && userInfoResult.data.mid) {
+            sender_uid = userInfoResult.data.mid.toString();
+            console.log('成功获取用户ID:', sender_uid);
+          } else {
+            console.warn('获取用户ID失败，使用默认值0:', userInfoResult);
+          }
+        } catch (userInfoError) {
+          console.error('获取用户ID时出错，使用默认值0:', userInfoError);
+        }
+      }
+      
+      // 生成UUID作为dev_id
+      // 使用一个简单的UUID v4生成函数
+      const generateUUID = () => {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16).toUpperCase();
+        });
+      };
+      
+      const dev_id = generateUUID();
+      const timestamp = Math.floor(Date.now() / 1000);
+      // 使用传入的csrfToken，如果没有则从cookies中提取
+      const csrf = csrfToken || cookies.match(/bili_jct=([^;]+)/)?.[1] || '';
+      
+      // 构建请求参数
+      const formData = new URLSearchParams({
+        'msg[sender_uid]': sender_uid,
+        'msg[receiver_id]': receiverId, // 使用传入的receiverId作为接收者ID
+        'msg[receiver_type]': '1',
+        'msg[msg_type]': '1',
+        'msg[msg_status]': '0',
+        'msg[dev_id]': dev_id,
+        'msg[timestamp]': timestamp.toString(),
+        'msg[content]': JSON.stringify({ content }),
+        'msg[new_face]': '0',
+        'msg[up_selection]': '0',
+        'msg[build]': '0',
+        'msg[mobi_app]': 'web',
+        'msg[canal_token]': '', // 添加canal_token参数，设置为空
+        'csrf': csrf,
+        'csrf_token': csrf
+      });
+      
+      // 打印完整的请求参数
+      console.log('发送私信，完整参数:', {
+        senderUid: sender_uid,
+        receiverId,
+        dev_id,
+        timestamp,
+        hasCsrf: !!csrf,
+        formDataString: formData.toString(),
+        requestUrl: 'https://api.vc.bilibili.com/web_im/v1/web_im/send_msg'
+      });
+      
       // 检查是否应该使用代理
       const useProxy = await shouldUseProxy();
       
       if (useProxy) {
         console.log('通过代理发送私信');
-        return await sendRequestViaProxy({
+        const proxyResult = await sendRequestViaProxy({
           url: 'https://api.vc.bilibili.com/web_im/v1/web_im/send_msg',
           method: 'POST',
           headers: {
             Cookie: cookies,
             'Content-Type': 'application/x-www-form-urlencoded'
           },
-          data: new URLSearchParams({
-            'msg[sender_uid]': '0',
-            'msg[receiver_id]': receiverId,
-            'msg[receiver_type]': '1',
-            'msg[msg_type]': '1',
-            'msg[msg_status]': '0',
-            'msg[content]': JSON.stringify({ content }),
-            'csrf': cookies.match(/bili_jct=([^;]+)/)?.[1] || ''
-          }).toString()
+          data: formData.toString()
         });
+        
+        console.log('代理发送私信响应:', proxyResult);
+        return proxyResult;
       } else {
+        console.log('直接发送私信请求');
         const response = await biliApi.post(
           'https://api.vc.bilibili.com/web_im/v1/web_im/send_msg',
-          new URLSearchParams({
-            'msg[sender_uid]': '0',
-            'msg[receiver_id]': receiverId,
-            'msg[receiver_type]': '1',
-            'msg[msg_type]': '1',
-            'msg[msg_status]': '0',
-            'msg[content]': JSON.stringify({ content }),
-            'csrf': cookies.match(/bili_jct=([^;]+)/)?.[1] || ''
-          }).toString(),
+          formData.toString(),
           {
             headers: {
               Cookie: cookies,
@@ -400,11 +518,96 @@ export const messageApi = {
           }
         );
         
+        console.log('直接发送私信响应:', response.data);
         return response.data;
       }
     } catch (error) {
       console.error('发送私信失败:', error);
+      if (error.response) {
+        console.error('B站API错误响应:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
       return handleApiError(error, '发送私信失败');
+    }
+  },
+  
+  // 标记私信为已读
+  markAsRead: async (cookies, talkerId, ackSeqno, csrf) => {
+    try {
+      if (!cookies || !talkerId || !ackSeqno) {
+        return {
+          code: -1,
+          message: '缺少必要参数',
+          data: null
+        };
+      }
+      
+      // 如果没有提供csrf，从cookies中提取
+      if (!csrf) {
+        csrf = cookies.match(/bili_jct=([^;]+)/)?.[1] || '';
+      }
+      
+      console.log('标记私信为已读请求开始:', {
+        talkerId,
+        ackSeqno,
+        hasCsrf: !!csrf,
+        cookiesLength: cookies?.length
+      });
+      
+      // 检查是否应该使用代理
+      const useProxy = await shouldUseProxy();
+      
+      const requestData = new URLSearchParams({
+        talker_id: talkerId,
+        session_type: '1',
+        ack_seqno: ackSeqno.toString(),
+        csrf: csrf,
+        csrf_token: csrf
+      }).toString();
+      
+      if (useProxy) {
+        console.log('通过代理标记私信为已读');
+        return await sendRequestViaProxy({
+          url: 'https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack',
+          method: 'POST',
+          headers: {
+            Cookie: cookies,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          data: requestData
+        });
+      } else {
+        const response = await biliApi.post(
+          'https://api.vc.bilibili.com/session_svr/v1/session_svr/update_ack',
+          requestData,
+          {
+            headers: {
+              Cookie: cookies,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          }
+        );
+        
+        console.log('标记私信为已读响应:', {
+          code: response.data.code,
+          message: response.data.message
+        });
+        
+        return response.data;
+      }
+    } catch (error) {
+      console.error('标记私信为已读失败:', error);
+      if (error.response) {
+        console.error('B站API错误响应:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      return handleApiError(error, '标记私信为已读失败');
     }
   }
 };

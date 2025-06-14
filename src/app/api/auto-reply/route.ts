@@ -150,6 +150,52 @@ export async function POST(request: NextRequest) {
                 }
               }
             }
+            
+            // 特殊处理：如果messages为null但has_more为1，这可能表示需要获取历史消息
+            if (messagesData.data.messages === null && messagesData.data.has_more === 1) {
+              console.log('检测到messages为null但has_more为1，这可能表示需要获取历史消息');
+              console.log('完整的data结构:', JSON.stringify(messagesData.data));
+              
+              // 尝试使用min_seqno和max_seqno参数重新获取消息
+              if (messagesData.data.min_seqno && messagesData.data.max_seqno) {
+                console.log('尝试使用序列号参数重新获取消息:', {
+                  min_seqno: messagesData.data.min_seqno,
+                  max_seqno: messagesData.data.max_seqno
+                });
+                
+                // 使用min_seqno作为begin_seqno，max_seqno作为end_seqno
+                const retryMessagesData = await messageApi.getSessionMessages(user.cookies, talkerId, {
+                  begin_seqno: messagesData.data.min_seqno,
+                  end_seqno: messagesData.data.max_seqno,
+                  size: 50 // 增加size参数以获取更多消息
+                });
+                
+                console.log('重新获取消息结果:', {
+                  code: retryMessagesData.code,
+                  message: retryMessagesData.message,
+                  hasData: !!retryMessagesData.data,
+                  hasMessages: Array.isArray(retryMessagesData.data?.messages),
+                  messageCount: retryMessagesData.data?.messages?.length || 0
+                });
+                
+                // 如果重新获取成功，使用新获取的消息
+                if (retryMessagesData.code === 0 && Array.isArray(retryMessagesData.data?.messages)) {
+                  messages = retryMessagesData.data.messages;
+                  console.log('成功使用序列号参数获取到消息，数量:', messages.length);
+                } else {
+                  // 创建一个空的消息数组，因为重新获取也失败了
+                  messages = [];
+                  console.log('使用序列号参数重新获取消息失败');
+                }
+              } else {
+                // 创建一个空的消息数组，因为没有序列号参数
+                messages = [];
+                console.log('无法获取序列号参数，无法重新获取消息');
+              }
+              
+              // 记录这种情况以便后续分析
+              console.log('特殊情况处理完成：messages为null但has_more为1');
+            }
           }
           
           console.log('获取到私信内容:', {

@@ -132,8 +132,8 @@ export async function POST(request: NextRequest, { params }: { params: { talkerI
     // 发送私信
     const sendResult = await messageApi.sendMessage(
       user.cookies,
-      user.biliUid,
-      talkerId,
+      user.biliUid, // 发送者ID
+      talkerId,    // 接收者ID
       content,
       csrf
     );

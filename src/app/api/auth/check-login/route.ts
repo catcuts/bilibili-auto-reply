@@ -68,23 +68,28 @@ export async function POST(request: NextRequest) {
       if (userInfo.code === 0) {
         const userData = userInfo.data;
         
+        // 确保用户名不为undefined
+        const username = userData.name || `用户${userData.mid}`;
+        console.log('获取到的用户信息:', { mid: userData.mid, name: username, face: userData.face });
+        
         // 在数据库中创建或更新用户
         const user = await prisma.user.upsert({
           where: { biliUserId: userData.mid.toString() },
           update: {
-            biliUsername: userData.name,
+            biliUsername: username,
             avatarUrl: userData.face, // 保存用户头像URL
             cookies: cookieStr,
             lastLoginAt: new Date()
           },
           create: {
             biliUserId: userData.mid.toString(),
-            biliUsername: userData.name,
+            biliUsername: username,
             avatarUrl: userData.face, // 保存用户头像URL
             cookies: cookieStr,
             lastLoginAt: new Date()
           }
         });
+        console.log('用户数据保存成功:', { id: user.id, biliUserId: user.biliUserId, biliUsername: user.biliUsername });
         
         // 创建响应对象
         const response = NextResponse.json({
