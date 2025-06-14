@@ -2,20 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
+import dynamic from 'next/dynamic';
+
+// 动态导入代理配置组件
+const ProxyConfig = dynamic(() => import('@/components/settings/ProxyConfig'), {
+  loading: () => <div className="animate-pulse bg-gray-200 h-40 rounded-md"></div>,
+  ssr: false
+});
 
 export default function SettingsPage() {
-  const [userId, setUserId] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
-  
-  // 检查本地存储中的用户ID
-  useEffect(() => {
-    const storedUserId = localStorage.getItem('userId');
-    if (storedUserId) {
-      setUserId(storedUserId);
-    }
-    setLoading(false);
-  }, []);
-  
   return (
     <MainLayout>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -26,20 +21,8 @@ export default function SettingsPage() {
           </p>
         </div>
         
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
-          </div>
-        ) : !userId ? (
-          <div className="bg-white shadow sm:rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">请先登录</h3>
-              <div className="mt-2 max-w-xl text-sm text-gray-500">
-                <p>您需要登录后才能访问设置页面。</p>
-              </div>
-            </div>
-          </div>
-        ) : (
+        <div className="space-y-6">
+          {/* 基本设置卡片 */}
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="px-4 py-5 sm:px-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900">应用设置</h3>
@@ -110,7 +93,18 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
-        )}
+          
+          {/* 代理配置卡片 */}
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="px-4 py-5 sm:px-6">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">代理配置</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">设置代理服务器以优化与B站API的通信</p>
+            </div>
+            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+              <ProxyConfig />
+            </div>
+          </div>
+        </div>
       </div>
     </MainLayout>
   );
