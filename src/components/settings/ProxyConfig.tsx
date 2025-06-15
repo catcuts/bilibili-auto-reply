@@ -9,7 +9,19 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Clock } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+interface ProxyTimeRange {
+  id?: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  daysOfWeek: string;
+}
 
 interface ProxyConfigData {
   id: string;
@@ -17,6 +29,8 @@ interface ProxyConfigData {
   host: string;
   port: number;
   ruleScript: string;
+  enableTimeRanges: boolean;
+  timeRanges: ProxyTimeRange[];
 }
 
 const defaultRuleScript = `/**
@@ -41,9 +55,18 @@ export default function ProxyConfig() {
     enabled: false,
     host: '',
     port: 0,
-    ruleScript: defaultRuleScript
+    ruleScript: defaultRuleScript,
+    enableTimeRanges: false,
+    timeRanges: []
   });
   const [activeTab, setActiveTab] = useState('basic');
+  const [newTimeRange, setNewTimeRange] = useState<ProxyTimeRange>({
+    name: '',
+    startTime: '08:00',
+    endTime: '18:00',
+    daysOfWeek: '1,2,3,4,5'
+  });
+  const [editingTimeRange, setEditingTimeRange] = useState<{index: number; data: ProxyTimeRange | null}>({index: -1, data: null});
   const [testResult, setTestResult] = useState<{success: boolean; message: string; transformedUrl?: string}>({ success: false, message: '' });
   const [testUrl, setTestUrl] = useState('https://api.bilibili.com/x/space/myinfo');
   const [testLoading, setTestLoading] = useState(false);
@@ -66,7 +89,9 @@ export default function ProxyConfig() {
             enabled: false,
             host: '',
             port: 0,
-            ruleScript: defaultRuleScript
+            ruleScript: defaultRuleScript,
+            enableTimeRanges: false,
+            timeRanges: []
           });
         }
       } catch (error) {
@@ -207,14 +232,7 @@ export default function ProxyConfig() {
 
   return (
     <Card className="w-full">
-      <CardHeader>
-        <CardTitle>代理设置</CardTitle>
-        <CardDescription>
-          配置代理服务器，用于与B站API通信。代理可以帮助解决网络问题或自定义请求处理。
-        </CardDescription>
-      </CardHeader>
-      
-      <CardContent>
+      <CardContent className="pt-6">
         <div className="flex items-center space-x-2 mb-6">
           <Switch
             id="proxy-enabled"
@@ -227,6 +245,7 @@ export default function ProxyConfig() {
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="basic">基本设置</TabsTrigger>
+            <TabsTrigger value="time-ranges">时间段设置</TabsTrigger>
             <TabsTrigger value="advanced">高级规则</TabsTrigger>
             <TabsTrigger value="test">规则测试</TabsTrigger>
           </TabsList>
@@ -262,6 +281,287 @@ export default function ProxyConfig() {
                   如需更高级的代理规则，请切换到"高级规则"选项卡。
                 </p>
               </div>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="time-ranges">
+            <div className="space-y-4">
+              <div className="flex items-center space-x-2 mb-4">
+                <Switch
+                  id="enable-time-ranges"
+                  checked={proxyConfig.enableTimeRanges}
+                  onCheckedChange={(checked) => setProxyConfig({...proxyConfig, enableTimeRanges: checked})}
+                  disabled={!proxyConfig.enabled}
+                />
+                <Label htmlFor="enable-time-ranges">启用代理时间段</Label>
+                {!proxyConfig.enabled && (
+                  <Badge variant="outline" className="ml-2 text-amber-500 border-amber-200 bg-amber-50">
+                    需要先启用代理
+                  </Badge>
+                )}
+              </div>
+              
+              {proxyConfig.enabled && (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 p-4 rounded-md">
+                    <p className="text-sm text-slate-700 mb-2">
+                      <Clock className="h-4 w-4 inline-block mr-1" />
+                      时间段设置允许您指定代理仅在特定时间段内生效。
+                      {proxyConfig.enableTimeRanges ? (
+                        <span>当前已启用时间段限制，代理将仅在以下设置的时间段内生效。</span>
+                      ) : (
+                        <span>当前未启用时间段限制，代理将在所有时间段内生效。</span>
+                      )}
+                    </p>
+                  </div>
+                  
+                  {proxyConfig.enableTimeRanges && (
+                    <>
+                      <div className="border rounded-md p-4">
+                        <h4 className="text-sm font-medium mb-3">{editingTimeRange.data ? '编辑时间段' : '添加新时间段'}</h4>
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="time-range-name">名称</Label>
+                            <Input
+                              id="time-range-name"
+                              placeholder="例如: 工作时间"
+                              value={editingTimeRange.data ? editingTimeRange.data.name : newTimeRange.name}
+                              onChange={(e) => {
+                                if (editingTimeRange.data) {
+                                  setEditingTimeRange({
+                                    ...editingTimeRange,
+                                    data: { ...editingTimeRange.data, name: e.target.value }
+                                  });
+                                } else {
+                                  setNewTimeRange({...newTimeRange, name: e.target.value});
+                                }
+                              }}
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label htmlFor="days-of-week">生效日</Label>
+                            <Select 
+                              value={editingTimeRange.data ? editingTimeRange.data.daysOfWeek : newTimeRange.daysOfWeek} 
+                              onValueChange={(value) => {
+                                if (editingTimeRange.data) {
+                                  setEditingTimeRange({
+                                    ...editingTimeRange,
+                                    data: { ...editingTimeRange.data, daysOfWeek: value }
+                                  });
+                                } else {
+                                  setNewTimeRange({...newTimeRange, daysOfWeek: value});
+                                }
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="选择生效日" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1,2,3,4,5">工作日 (周一至周五)</SelectItem>
+                                <SelectItem value="6,7">周末 (周六、周日)</SelectItem>
+                                <SelectItem value="1,2,3,4,5,6,7">每天</SelectItem>
+                                <SelectItem value="1">周一</SelectItem>
+                                <SelectItem value="2">周二</SelectItem>
+                                <SelectItem value="3">周三</SelectItem>
+                                <SelectItem value="4">周四</SelectItem>
+                                <SelectItem value="5">周五</SelectItem>
+                                <SelectItem value="6">周六</SelectItem>
+                                <SelectItem value="7">周日</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="start-time">开始时间</Label>
+                            <Input
+                              id="start-time"
+                              type="time"
+                              value={editingTimeRange.data ? editingTimeRange.data.startTime : newTimeRange.startTime}
+                              onChange={(e) => {
+                                if (editingTimeRange.data) {
+                                  setEditingTimeRange({
+                                    ...editingTimeRange,
+                                    data: { ...editingTimeRange.data, startTime: e.target.value }
+                                  });
+                                } else {
+                                  setNewTimeRange({...newTimeRange, startTime: e.target.value});
+                                }
+                              }}
+                            />
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <Label htmlFor="end-time">结束时间</Label>
+                            <Input
+                              id="end-time"
+                              type="time"
+                              value={editingTimeRange.data ? editingTimeRange.data.endTime : newTimeRange.endTime}
+                              onChange={(e) => {
+                                if (editingTimeRange.data) {
+                                  setEditingTimeRange({
+                                    ...editingTimeRange,
+                                    data: { ...editingTimeRange.data, endTime: e.target.value }
+                                  });
+                                } else {
+                                  setNewTimeRange({...newTimeRange, endTime: e.target.value});
+                                }
+                              }}
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="flex space-x-2">
+                          {editingTimeRange.data ? (
+                            <>
+                              <Button 
+                                onClick={() => {
+                                  if (!editingTimeRange.data?.name) {
+                                    toast.error('请输入时间段名称');
+                                    return;
+                                  }
+                                  
+                                  if (editingTimeRange.data.startTime >= editingTimeRange.data.endTime) {
+                                    toast.error('开始时间必须早于结束时间');
+                                    return;
+                                  }
+                                  
+                                  const updatedTimeRanges = [...proxyConfig.timeRanges];
+                                  updatedTimeRanges[editingTimeRange.index] = editingTimeRange.data;
+                                  
+                                  setProxyConfig({
+                                    ...proxyConfig,
+                                    timeRanges: updatedTimeRanges
+                                  });
+                                  
+                                  setEditingTimeRange({index: -1, data: null});
+                                  toast.success('已更新时间段');
+                                }}
+                              >
+                                保存修改
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                onClick={() => {
+                                  setEditingTimeRange({index: -1, data: null});
+                                }}
+                              >
+                                取消
+                              </Button>
+                            </>
+                          ) : (
+                            <Button 
+                              onClick={() => {
+                                if (!newTimeRange.name) {
+                                  toast.error('请输入时间段名称');
+                                  return;
+                                }
+                                
+                                if (newTimeRange.startTime >= newTimeRange.endTime) {
+                                  toast.error('开始时间必须早于结束时间');
+                                  return;
+                                }
+                                
+                                setProxyConfig({
+                                  ...proxyConfig,
+                                  timeRanges: [...proxyConfig.timeRanges, {...newTimeRange}]
+                                });
+                                
+                                // 重置新时间段表单
+                                setNewTimeRange({
+                                  name: '',
+                                  startTime: '08:00',
+                                  endTime: '18:00',
+                                  daysOfWeek: '1,2,3,4,5'
+                                });
+                                
+                                toast.success('已添加新时间段');
+                              }}
+                            >
+                              <Plus className="h-4 w-4 mr-1" /> 添加时间段
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="border rounded-md">
+                        <h4 className="text-sm font-medium p-4 pb-2">已配置时间段</h4>
+                        {proxyConfig.timeRanges.length === 0 ? (
+                          <div className="p-4 pt-0 text-sm text-muted-foreground">
+                            尚未配置任何时间段。代理将不会生效，除非添加至少一个时间段。
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[200px]">
+                            <div className="divide-y">
+                              {proxyConfig.timeRanges.map((timeRange, index) => (
+                                <div key={index} className="p-4 flex justify-between items-center">
+                                  <div>
+                                    <div className="font-medium">{timeRange.name}</div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {timeRange.startTime} - {timeRange.endTime} | 
+                                      {timeRange.daysOfWeek === '1,2,3,4,5' && '工作日'}
+                                      {timeRange.daysOfWeek === '6,7' && '周末'}
+                                      {timeRange.daysOfWeek === '1,2,3,4,5,6,7' && '每天'}
+                                      {!['1,2,3,4,5', '6,7', '1,2,3,4,5,6,7'].includes(timeRange.daysOfWeek) && 
+                                        timeRange.daysOfWeek.split(',').map(day => {
+                                          const dayMap = {
+                                            '1': '周一',
+                                            '2': '周二',
+                                            '3': '周三',
+                                            '4': '周四',
+                                            '5': '周五',
+                                            '6': '周六',
+                                            '7': '周日'
+                                          };
+                                          return dayMap[day];
+                                        }).join(', ')
+                                      }
+                                    </div>
+                                  </div>
+                                  <div className="flex space-x-2">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon"
+                                      onClick={() => {
+                                        setEditingTimeRange({
+                                          index,
+                                          data: {...timeRange}
+                                        });
+                                        // 滚动到编辑表单
+                                        document.getElementById('time-range-name')?.scrollIntoView({ behavior: 'smooth' });
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                      </svg>
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon"
+                                      onClick={() => {
+                                        setProxyConfig({
+                                          ...proxyConfig,
+                                          timeRanges: proxyConfig.timeRanges.filter((_, i) => i !== index)
+                                        });
+                                        toast.success('已删除时间段');
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </TabsContent>
           

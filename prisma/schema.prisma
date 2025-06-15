@@ -53,11 +53,25 @@ model Message {
 }
 
 model ProxyConfig {
-  id         String   @id @default(uuid())
-  enabled    Boolean  @default(false)
-  host       String
-  port       Int
-  ruleScript String   @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                  String        @id @default(uuid())
+  enabled             Boolean       @default(false)
+  host                String
+  port                Int
+  ruleScript          String        @default("")
+  enableTimeRanges    Boolean       @default(false)
+  timeRanges          ProxyTimeRange[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model ProxyTimeRange {
+  id           String      @id @default(uuid())
+  name         String
+  startTime    String      // 格式: HH:MM
+  endTime      String      // 格式: HH:MM
+  daysOfWeek   String      // 格式: 1,2,3,4,5,6,7 (周一到周日)
+  proxyConfig  ProxyConfig @relation(fields: [proxyConfigId], references: [id], onDelete: Cascade)
+  proxyConfigId String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }

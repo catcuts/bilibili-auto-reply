@@ -33,9 +33,55 @@ const createProxyClient = async () => {
 // 检查是否应该使用代理
 export const shouldUseProxy = async () => {
   try {
-    // 获取全局代理配置
-    const proxyConfig = await prisma.proxyConfig.findFirst();
-    return proxyConfig?.enabled || false;
+    // 获取全局代理配置，包括时间段
+    const proxyConfig = await prisma.proxyConfig.findFirst({
+      include: {
+        timeRanges: true
+      }
+    });
+    
+    // 如果代理未启用，直接返回false
+    if (!proxyConfig?.enabled) {
+      return false;
+    }
+    
+    // 如果未启用时间段限制，则始终使用代理
+    if (!proxyConfig.enableTimeRanges) {
+      return true;
+    }
+    
+    // 如果启用了时间段限制但没有配置时间段，则不使用代理
+    if (proxyConfig.timeRanges.length === 0) {
+      console.log('已启用时间段限制，但未配置任何时间段，不使用代理');
+      return false;
+    }
+    
+    // 检查当前时间是否在任一时间段内
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
+    const currentDayOfWeek = now.getDay() === 0 ? 7 : now.getDay(); // 转换为1-7表示周一到周日
+    
+    // 检查是否在任一时间段内
+    const isInTimeRange = proxyConfig.timeRanges.some(range => {
+      // 检查星期是否匹配
+      const daysOfWeek = range.daysOfWeek.split(',').map(Number);
+      const isDayMatch = daysOfWeek.includes(currentDayOfWeek);
+      
+      // 检查时间是否在范围内
+      const isTimeMatch = currentTime >= range.startTime && currentTime <= range.endTime;
+      
+      return isDayMatch && isTimeMatch;
+    });
+    
+    if (isInTimeRange) {
+      console.log('当前时间在配置的代理时间段内，使用代理');
+      return true;
+    } else {
+      console.log('当前时间不在任何配置的代理时间段内，不使用代理');
+      return false;
+    }
   } catch (error) {
     console.error('检查代理配置失败:', error);
     return false;
