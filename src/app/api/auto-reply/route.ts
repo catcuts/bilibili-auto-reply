@@ -445,20 +445,22 @@ export async function POST(request: NextRequest) {
                                     where: { messageId: messageId.toString() },
                                 });
 
-                                if (!existingMessage) {
-                                    try {
-                                        // 获取接收者ID
-                                        let receiverId = user.biliUserId; // 默认为当前用户ID
-                                        if (msg.receiver_id) {
-                                            receiverId = msg.receiver_id.toString();
-                                        }
+                                // 不管消息是否存在，都处理未读消息
+                                try {
+                                    // 获取接收者ID
+                                    let receiverId = user.biliUserId; // 默认为当前用户ID
+                                    if (msg.receiver_id) {
+                                        receiverId = msg.receiver_id.toString();
+                                    }
 
-                                        // 获取发送时间
-                                        let sentAt = new Date();
-                                        if (msg.timestamp) {
-                                            sentAt = new Date(msg.timestamp * 1000);
-                                        }
+                                    // 获取发送时间
+                                    let sentAt = new Date();
+                                    if (msg.timestamp) {
+                                        sentAt = new Date(msg.timestamp * 1000);
+                                    }
 
+                                    // 如果消息不存在，保存到数据库
+                                    if (!existingMessage) {
                                         console.log('保存消息到数据库:', {
                                             messageId,
                                             senderId: msg.sender_uid.toString(),
@@ -483,11 +485,15 @@ export async function POST(request: NextRequest) {
 
                                         console.log(`成功保存消息到数据库: ${messageId}`);
                                         unprocessedMessages.push(savedMessage);
-                                    } catch (error) {
-                                        console.error('保存消息到数据库失败:', error);
+                                    } else if (!existingMessage.isProcessed) {
+                                        // 如果消息存在但未处理，加入处理队列
+                                        console.log('消息已存在但未处理，加入处理队列:', messageId);
+                                        unprocessedMessages.push(existingMessage);
+                                    } else {
+                                        console.log('消息已存在且已处理，跳过处理:', messageId);
                                     }
-                                } else {
-                                    console.log('消息已存在，跳过处理:', messageId);
+                                } catch (error) {
+                                    console.error('处理消息失败:', error);
                                 }
                             } catch (e) {
                                 console.error('解析消息内容失败:', e);
