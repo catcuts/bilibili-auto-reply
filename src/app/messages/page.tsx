@@ -92,7 +92,45 @@ export default function MessagesPage() {
       const data = await response.json();
       
       if (data.success) {
-        setMessages(data.data);
+        // 处理API返回的消息数据，确保格式正确
+        const processedMessages = data.data.map((msg: any) => {
+          // 如果是B站API返回的原始消息格式
+          if (msg.msg_type !== undefined) {
+            // 处理消息内容
+            let content = msg.content;
+            if (msg.msg_type === 1) {
+              try {
+                const contentObj = JSON.parse(msg.content);
+                if (contentObj && contentObj.content) {
+                  content = contentObj.content;
+                }
+              } catch (e) {
+                // 如果解析失败，保持原始内容
+                console.error('解析消息内容失败:', e);
+              }
+            }
+            
+            return {
+              id: msg.msg_key?.toString() || `temp-${Date.now()}-${Math.random()}`,
+              messageId: msg.msg_key?.toString() || '',
+              senderId: msg.sender_uid?.toString() || '',
+              receiverId: msg.receiver_id?.toString() || '',
+              content,
+              sentAt: msg.timestamp ? new Date(msg.timestamp * 1000).toISOString() : new Date().toISOString(),
+              isAutoReply: false,
+              // 保留原始字段，以便MessageList组件处理
+              msg_type: msg.msg_type,
+              timestamp: msg.timestamp,
+              sender_uid: msg.sender_uid?.toString(),
+              receiver_id: msg.receiver_id?.toString()
+            };
+          }
+          
+          // 如果是数据库返回的消息格式，保持不变
+          return msg;
+        });
+        
+        setMessages(processedMessages);
       } else {
         setError(data.message || '获取消息内容失败');
       }
