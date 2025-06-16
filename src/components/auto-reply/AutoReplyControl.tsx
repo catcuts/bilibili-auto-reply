@@ -74,12 +74,13 @@ const AutoReplyControl: React.FC<AutoReplyControlProps> = ({ userId, onProcessCo
             clearInterval(intervalId);
             const id = setInterval(handleProcessAutoReply, checkInterval * 1000);
             setIntervalId(id);
+            // 移除立即执行的逻辑，避免频繁触发请求
         }
     }, [checkInterval]); // 只在checkInterval变化时执行
 
     // 处理自动回复
     const handleProcessAutoReply = async () => {
-        if (!userId) return;
+        if (!userId || loading) return; // 如果已经在处理中，则不再发起新请求
 
         try {
             setLoading(true);

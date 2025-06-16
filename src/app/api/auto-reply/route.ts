@@ -21,6 +21,9 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // 定义处理结果数组
+        const processedResults = [];
+        
         // 获取用户信息
         const user = await prisma.user.findUnique({
             where: { id: userId },
@@ -68,45 +71,33 @@ export async function POST(request: NextRequest) {
         }
 
         // 获取会话列表
-        const sessionListData = await messageApi.getSessionList(user.cookies);
+        const sessionsData = await messageApi.getSessionList(user.cookies);
 
-        if (sessionListData.code !== 0) {
-            console.log('获取会话列表失败:', {
-                code: sessionListData.code,
-                message: sessionListData.message,
+        if (sessionsData.code === 0 && Array.isArray(sessionsData.data.session_list)) {
+            console.log('获取到会话列表，数量:', sessionsData.data.session_list.length);
+
+            // 处理结果
+            const processedResults = [];
+            
+            // 获取用户的所有规则
+            const userRules = await prisma.rule.findMany({
+                where: { userId: user.id },
             });
-            return NextResponse.json(
-                {
-                    success: false,
-                    message: sessionListData.message || '获取会话列表失败',
-                },
-                { status: 400 }
+
+            console.log('用户规则:', {
+                totalRules: userRules.length,
+                ruleNames: userRules.map(r => r.name),
+            });
+
+            // 只处理未读的会话
+            const unreadSessions = sessionsData.data.session_list.filter(
+                session => session.unread_count > 0
             );
-        }
+            
+            console.log('未读会话数量:', unreadSessions.length);
 
-        const sessionList = sessionListData.data.session_list || [];
-        console.log('获取到会话列表:', {
-            totalSessions: sessionList.length,
-            unreadSessions: sessionList.filter(s => s.unread_count > 0).length,
-        });
-
-        const processedResults = [];
-
-        // 获取用户的所有规则
-        const userRules = await prisma.rule.findMany({
-            where: { userId: user.id },
-        });
-
-        console.log('用户规则:', {
-            totalRules: userRules.length,
-            ruleNames: userRules.map(r => r.name),
-        });
-
-        // 处理每个会话
-        for (const session of sessionList) {
-            // 只处理未读消息
-            // 处理未读会话
-            if (session.unread_count > 0) {
+            // 遍历未读会话
+            for (const session of unreadSessions) {
                 const talkerId = session.talker_id ? session.talker_id.toString() : '';
 
                 console.log('处理未读会话:', {
@@ -273,45 +264,57 @@ export async function POST(request: NextRequest) {
                     const unprocessedMessages = [];
                     console.log(`处理过滤后的消息，数量: ${messages.length}`);
 
-                    for (const msg of messages) {
-                        console.log('处理消息对象:', {
-                            msg_type: msg.msg_type,
-                            has_sender_uid: !!msg.sender_uid,
-                            has_msg_key: !!msg.msg_key,
-                            has_content: !!msg.content,
-                            content_type: typeof msg.content,
-                            has_timestamp: !!msg.timestamp,
+                    // 只处理最新的一条消息
+                    if (messages.length > 0) {
+                        // 按时间戳排序，找出最新的消息
+                        const sortedMessages = [...messages].sort((a, b) => {
+                            const timestampA = a.timestamp ? a.timestamp : 0;
+                            const timestampB = b.timestamp ? b.timestamp : 0;
+                            return timestampB - timestampA; // 降序排列，最新的在前面
+                        });
+
+                        // 获取最新的一条消息
+                        const latestMsg = sortedMessages[0];
+                        
+                        console.log('处理最新消息:', {
+                            msg_type: latestMsg.msg_type,
+                            has_sender_uid: !!latestMsg.sender_uid,
+                            has_msg_key: !!latestMsg.msg_key,
+                            has_content: !!latestMsg.content,
+                            content_type: typeof latestMsg.content,
+                            has_timestamp: !!latestMsg.timestamp,
+                            timestamp: latestMsg.timestamp ? new Date(latestMsg.timestamp * 1000).toISOString() : '无时间戳'
                         });
 
                         // 只处理文本消息且发送者不是自己
                         if (
-                            msg.msg_type === 1 &&
-                            msg.sender_uid &&
-                            msg.sender_uid.toString() !== user.biliUserId
+                            latestMsg.msg_type === 1 &&
+                            latestMsg.sender_uid &&
+                            latestMsg.sender_uid.toString() !== user.biliUserId
                         ) {
                             try {
                                 // 尝试获取消息ID
                                 let messageId =
-                                    msg.msg_key ||
-                                    msg.message_id ||
-                                    msg.id ||
-                                    msg._id ||
-                                    msg.msg_seqno;
+                                    latestMsg.msg_key ||
+                                    latestMsg.message_id ||
+                                    latestMsg.id ||
+                                    latestMsg._id ||
+                                    latestMsg.msg_seqno;
 
                                 // 处理可能的嵌套ID结构
-                                if (!messageId && msg.msg_id) {
+                                if (!messageId && latestMsg.msg_id) {
                                     messageId =
-                                        typeof msg.msg_id === 'object'
-                                            ? msg.msg_id.id || msg.msg_id.msg_id
-                                            : msg.msg_id;
+                                        typeof latestMsg.msg_id === 'object'
+                                            ? latestMsg.msg_id.id || latestMsg.msg_id.msg_id
+                                            : latestMsg.msg_id;
                                 }
 
                                 // 尝试从last_msg字段获取ID
-                                if (!messageId && msg.last_msg) {
+                                if (!messageId && latestMsg.last_msg) {
                                     const lastMsg =
-                                        typeof msg.last_msg === 'string'
-                                            ? JSON.parse(msg.last_msg)
-                                            : msg.last_msg;
+                                        typeof latestMsg.last_msg === 'string'
+                                            ? JSON.parse(latestMsg.last_msg)
+                                            : latestMsg.last_msg;
                                     messageId =
                                         lastMsg.msg_key ||
                                         lastMsg.msg_seqno ||
@@ -323,7 +326,7 @@ export async function POST(request: NextRequest) {
                                 if (!messageId) {
                                     console.log(
                                         '跳过没有消息ID的消息:',
-                                        JSON.stringify(msg).substring(0, 100) + '...'
+                                        JSON.stringify(latestMsg).substring(0, 100) + '...'
                                     );
                                     continue;
                                 }
@@ -333,12 +336,12 @@ export async function POST(request: NextRequest) {
                                     messageId,
                                     type: typeof messageId,
                                     source:
-                                        Object.keys(msg).filter(
+                                        Object.keys(latestMsg).filter(
                                             key =>
-                                                msg[key] === messageId ||
-                                                (typeof msg[key] === 'object' &&
-                                                    msg[key] &&
-                                                    msg[key].id === messageId)
+                                                latestMsg[key] === messageId ||
+                                                (typeof latestMsg[key] === 'object' &&
+                                                    latestMsg[key] &&
+                                                    latestMsg[key].id === messageId)
                                         )[0] || '未知',
                                 });
 
@@ -346,11 +349,11 @@ export async function POST(request: NextRequest) {
                                 let content = '';
 
                                 // 首先检查常见的内容字段
-                                if (msg.content) {
-                                    if (typeof msg.content === 'string') {
+                                if (latestMsg.content) {
+                                    if (typeof latestMsg.content === 'string') {
                                         try {
                                             // 尝试解析JSON格式的内容
-                                            const contentObj = JSON.parse(msg.content);
+                                            const contentObj = JSON.parse(latestMsg.content);
                                             if (contentObj.content) {
                                                 content = contentObj.content;
                                             } else {
@@ -364,30 +367,30 @@ export async function POST(request: NextRequest) {
                                         } catch (e) {
                                             // 如果不是JSON格式，直接使用字符串内容
                                             console.log('消息内容不是JSON格式，直接使用字符串内容');
-                                            content = msg.content;
+                                            content = latestMsg.content;
                                         }
-                                    } else if (typeof msg.content === 'object') {
+                                    } else if (typeof latestMsg.content === 'object') {
                                         // 如果内容已经是对象，尝试获取文本内容
                                         content =
-                                            msg.content.content ||
-                                            msg.content.text ||
-                                            msg.content.message ||
-                                            JSON.stringify(msg.content);
+                                            latestMsg.content.content ||
+                                            latestMsg.content.text ||
+                                            latestMsg.content.message ||
+                                            JSON.stringify(latestMsg.content);
                                     }
                                 }
 
                                 // 如果content字段没有内容，尝试其他可能的字段
                                 if (!content) {
                                     // 尝试从msg.text或msg.message获取内容
-                                    content = msg.text || msg.message || msg.msg;
+                                    content = latestMsg.text || latestMsg.message || latestMsg.msg;
 
                                     // 尝试从last_msg字段获取内容
-                                    if (!content && msg.last_msg) {
+                                    if (!content && latestMsg.last_msg) {
                                         try {
                                             const lastMsg =
-                                                typeof msg.last_msg === 'string'
-                                                    ? JSON.parse(msg.last_msg)
-                                                    : msg.last_msg;
+                                                typeof latestMsg.last_msg === 'string'
+                                                    ? JSON.parse(latestMsg.last_msg)
+                                                    : latestMsg.last_msg;
                                             content = lastMsg.content;
 
                                             // 如果last_msg.content是对象，尝试提取文本
@@ -420,7 +423,7 @@ export async function POST(request: NextRequest) {
                                 if (!content) {
                                     console.log(
                                         '无法解析消息内容，跳过此消息:',
-                                        JSON.stringify(msg).substring(0, 100) + '...'
+                                        JSON.stringify(latestMsg).substring(0, 100) + '...'
                                     );
                                     continue;
                                 }
@@ -435,68 +438,44 @@ export async function POST(request: NextRequest) {
                                     content:
                                         content.substring(0, 30) +
                                         (content.length > 30 ? '...' : ''),
-                                    timestamp: msg.timestamp
-                                        ? new Date(msg.timestamp * 1000).toISOString()
+                                    timestamp: latestMsg.timestamp
+                                        ? new Date(latestMsg.timestamp * 1000).toISOString()
                                         : new Date().toISOString(),
                                 });
 
-                                // 检查消息是否已处理
-                                const existingMessage = await prisma.message.findUnique({
-                                    where: { messageId: messageId.toString() },
-                                });
-
-                                // 不管消息是否存在，都处理未读消息
-                                try {
-                                    // 获取接收者ID
-                                    let receiverId = user.biliUserId; // 默认为当前用户ID
-                                    if (msg.receiver_id) {
-                                        receiverId = msg.receiver_id.toString();
-                                    }
-
-                                    // 获取发送时间
-                                    let sentAt = new Date();
-                                    if (msg.timestamp) {
-                                        sentAt = new Date(msg.timestamp * 1000);
-                                    }
-
-                                    // 如果消息不存在，保存到数据库
-                                    if (!existingMessage) {
-                                        console.log('保存消息到数据库:', {
-                                            messageId,
-                                            senderId: msg.sender_uid.toString(),
-                                            receiverId,
-                                            contentLength: content.length,
-                                            sentAt: sentAt.toISOString(),
-                                        });
-
-                                        // 保存消息到数据库
-                                        const savedMessage = await prisma.message.create({
-                                            data: {
-                                                messageId: messageId.toString(),
-                                                userId: user.id,
-                                                senderId: msg.sender_uid.toString(),
-                                                receiverId,
-                                                content,
-                                                sentAt,
-                                                isRead: false,
-                                                isProcessed: false,
-                                            },
-                                        });
-
-                                        console.log(`成功保存消息到数据库: ${messageId}`);
-                                        unprocessedMessages.push(savedMessage);
-                                    } else if (!existingMessage.isProcessed) {
-                                        // 如果消息存在但未处理，加入处理队列
-                                        console.log('消息已存在但未处理，加入处理队列:', messageId);
-                                        unprocessedMessages.push(existingMessage);
-                                    } else {
-                                        console.log('消息已存在且已处理，跳过处理:', messageId);
-                                    }
-                                } catch (error) {
-                                    console.error('处理消息失败:', error);
+                                // 获取接收者ID
+                                let receiverId = user.biliUserId; // 默认为当前用户ID
+                                if (latestMsg.receiver_id) {
+                                    receiverId = latestMsg.receiver_id.toString();
                                 }
-                            } catch (e) {
-                                console.error('解析消息内容失败:', e);
+
+                                // 获取发送时间
+                                let sentAt = new Date();
+                                if (latestMsg.timestamp) {
+                                    sentAt = new Date(latestMsg.timestamp * 1000);
+                                }
+
+                                // 创建消息对象用于处理，但不保存到数据库
+                                const messageToProcess = {
+                                    messageId: messageId.toString(),
+                                    userId: user.id,
+                                    senderId: latestMsg.sender_uid.toString(),
+                                    receiverId,
+                                    content,
+                                    sentAt,
+                                };
+
+                                // 只处理最近1分钟内的消息，避免重复处理
+                                const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000);
+                                if (sentAt >= oneMinuteAgo) {
+                                    // 直接将消息添加到处理队列
+                                    unprocessedMessages.push(messageToProcess);
+                                    console.log(`添加最近消息到处理队列: ${messageId}, 发送时间: ${sentAt.toISOString()}`);
+                                } else {
+                                    console.log(`跳过较早的消息: ${messageId}, 发送时间: ${sentAt.toISOString()}`);
+                                }
+                            } catch (error) {
+                                console.error('处理消息失败:', error);
                             }
                         }
                     }
@@ -551,7 +530,7 @@ export async function POST(request: NextRequest) {
                             });
 
                             if (sendResult.code === 0) {
-                                // 保存自动回复消息到数据库
+                                // 可选：保存自动回复消息到数据库
                                 await prisma.message.create({
                                     data: {
                                         messageId: sendResult.data.msg_key.toString(),
@@ -568,17 +547,6 @@ export async function POST(request: NextRequest) {
                                 });
 
                                 console.log('自动回复消息已保存到数据库');
-
-                                // 更新原消息为已处理
-                                await prisma.message.update({
-                                    where: { id: message.id },
-                                    data: {
-                                        isProcessed: true,
-                                        isRead: true,
-                                    },
-                                });
-
-                                console.log('原消息已标记为已处理');
 
                                 try {
                                     processedResults.push({
@@ -618,15 +586,7 @@ export async function POST(request: NextRequest) {
                                 });
                             }
                         } else {
-                            // 没有匹配的规则，标记为已处理
-                            await prisma.message.update({
-                                where: { id: message.id },
-                                data: {
-                                    isProcessed: true,
-                                    isRead: true,
-                                },
-                            });
-
+                            // 没有匹配的规则，记录结果
                             processedResults.push({
                                 messageId: message.messageId,
                                 senderId: message.senderId,
@@ -637,19 +597,29 @@ export async function POST(request: NextRequest) {
                         }
                     }
 
-                    // 标记会话为已读
+                    // 立即标记当前会话为已读
                     if (messages.length > 0 && session.ack_seqno) {
-                        console.log('标记会话为已读:', {
+                        console.log('立即标记会话为已读:', {
                             talkerId,
                             ackSeqno: session.ack_seqno,
                         });
 
-                        await messageApi.markAsRead(
-                            user.cookies,
-                            talkerId,
-                            session.ack_seqno,
-                            csrf
-                        );
+                        try {
+                            const markResult = await messageApi.markAsRead(
+                                user.cookies,
+                                talkerId,
+                                session.ack_seqno,
+                                csrf
+                            );
+                            
+                            console.log('标记已读结果:', {
+                                code: markResult.code,
+                                message: markResult.message,
+                                success: markResult.code === 0
+                            });
+                        } catch (error) {
+                            console.error('标记会话已读失败:', error);
+                        }
                     }
                 } else {
                     console.error('获取私信内容失败:', {
